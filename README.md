@@ -28,11 +28,29 @@ PowerToys Always-on-Top sets `HWND_TOPMOST` only once on hotkey trigger. When an
 
 ---
 
-### How to use
+### Installation & Usage
 
-#### 1. Download or Build
-- **Download**: Grab `TopmostDaemon.exe` directly from [Releases](https://github.com/pagar-ani/native-topmost/releases).
-- **Or Build from Source**: Run `build.bat` (uses native Windows C# compiler; zero installs needed).
+#### 1. Setup (Two Options)
+
+##### Option A: Grab Pre-Built Release (Easiest)
+1. Download source zip or binary from [Releases](https://github.com/pagar-ani/native-topmost/releases).
+2. Double-click `install.bat`.
+   - **Where does it go?** It automatically deploys `TopmostDaemon.exe` into `%LOCALAPPDATA%\TopmostDaemon\`. Even if you empty your `Downloads` folder later, it will not break.
+   - **Safe Execution**: Uses scoped execution bypass for that command only. Zero weakening of your system-wide PowerShell `ExecutionPolicy`. No registry tampering.
+
+##### Option B: Build Cleanly from Source
+Clone the repo and run:
+```cmd
+build.bat
+```
+*(Uses native `csc.exe` already present in `%SystemRoot%\Microsoft.NET`. No SDKs or Visual Studio needed).*
+
+Then run:
+```cmd
+install.bat
+```
+
+---
 
 #### 2. Hotkey
 - **Toggle Pin / Unpin**: `Win + Ctrl + T` on any active window.
@@ -40,17 +58,14 @@ PowerToys Always-on-Top sets `HWND_TOPMOST` only once on hotkey trigger. When an
 
 *Note: Ensure PowerToys native "Always on Top" is toggled OFF in PowerToys Settings to avoid hotkey collision.*
 
-#### 3. Run on Startup
-Run `install.ps1` from PowerShell to register silent auto-start on logon:
+---
 
-```powershell
-.\install.ps1
+#### 3. Uninstallation
+To completely remove at any time, simply run:
+```cmd
+uninstall.bat
 ```
-
-To remove at any time:
-```powershell
-.\uninstall.ps1
-```
+This stops the process, unregisters the Task Scheduler entry, and wipes `%LOCALAPPDATA%\TopmostDaemon` cleanly from disk.
 
 ---
 
