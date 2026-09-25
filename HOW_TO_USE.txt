@@ -1,0 +1,42 @@
+====================================================================
+  native-topmost (v1.0.0) - Ultra-lean Win32 Topmost Enforcer
+====================================================================
+
+Fixes Microsoft PowerToys Always-on-Top (Win + Ctrl + T) which fails
+when applications enter fullscreen mode.
+
+Resource Footprint: 7.5 KB binary | 2.5 MB RAM | Zero dependencies
+
+--------------------------------------------------------------------
+  HOW TO INSTALL (One-Click)
+--------------------------------------------------------------------
+1. Double-click "install.bat".
+   - Automatically deploys TopmostDaemon.exe to:
+     %LOCALAPPDATA%\TopmostDaemon\
+   - Sets it to start silently on Windows logon.
+   - Does NOT tamper with system-wide PowerShell ExecutionPolicy.
+   - Zero Administrator privileges required.
+
+--------------------------------------------------------------------
+  HOW TO USE
+--------------------------------------------------------------------
+- Press [ Win + Ctrl + T ] on ANY active window to pin or unpin.
+- High beep = Window pinned on top.
+- Low beep  = Window unpinned.
+- Works over fullscreen games, browsers (F11), video players, etc.
+
+*Note: If using Microsoft PowerToys, turn OFF its native "Always on Top"
+       in PowerToys Settings to avoid hotkey conflict.
+
+--------------------------------------------------------------------
+  HOW TO UNINSTALL
+--------------------------------------------------------------------
+1. Double-click "uninstall.bat".
+   - Stops the process, removes startup task, and wipes folder cleanly.
+
+--------------------------------------------------------------------
+  SOURCE & UPDATES
+--------------------------------------------------------------------
+GitHub: https://github.com/pagar-ani/native-topmost
+License: MIT
+====================================================================
