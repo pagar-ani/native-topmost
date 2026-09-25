@@ -18,17 +18,13 @@ PowerToys Always-on-Top sets `HWND_TOPMOST` only once on hotkey trigger. When an
 
 ---
 
-### Performance Metrics
+### Specifications
 
-Tested on Windows 11 x64:
-
-| Metric | PowerShell Version | `native-topmost.exe` |
-| :--- | :--- | :--- |
-| **Binary Footprint** | N/A (Script) | **7,680 bytes** (7.5 KB) |
-| **RAM (Working Set)** | ~73.0 MB | **~2.5 MB** |
-| **Steady-State Allocations** | Dynamic Heap | **0 bytes** ($GC_0 = 0$) |
-| **Cache Storage** | Dynamic Map | **Contiguous 128 bytes** (2 L1 lines) |
-| **Subsystem** | Console (`conhost.exe`) | Windows GUI (`winexe`, zero terminal flash) |
+- **Binary Footprint**: 7,680 bytes (7.5 KB)
+- **RAM (Working Set)**: ~2.5 MB
+- **Steady-State Allocations**: 0 bytes ($GC_0 = 0$)
+- **Internal Storage**: 128 bytes contiguous flat array (2 L1 cache lines)
+- **Subsystem**: Pure Windows GUI (`winexe`, zero terminal flash)
 
 ---
 
@@ -44,21 +40,22 @@ Tested on Windows 11 x64:
 Compile directly using the C# compiler already present in your Windows installation:
 
 ```cmd
+build.bat
+```
+
+Or via command line:
+```cmd
 C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /target:winexe /optimize+ /platform:x64 /debug- /nologo /out:TopmostDaemon.exe TopmostDaemon.cs
 ```
 
-#### 3. Run on Startup (Living-off-the-land)
-Register native Windows Scheduled Task so it runs silently on logon:
+#### 3. Run on Startup
+Run `install.ps1` or register native Windows Scheduled Task directly:
 
 ```powershell
 $action = New-ScheduledTaskAction -Execute "$PWD\TopmostDaemon.exe"
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0
 Register-ScheduledTask -TaskName "TopmostDaemon" -Action $action -Trigger $trigger -Settings $settings -Force
-```
-
-To run immediately without logging off:
-```powershell
 Start-ScheduledTask -TaskName "TopmostDaemon"
 ```
 
