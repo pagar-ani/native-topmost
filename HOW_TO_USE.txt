@@ -45,5 +45,5 @@ Open PowerToys Settings -> "Always on Top" -> Toggle it OFF.
   SOURCE & UPDATES
 --------------------------------------------------------------------
 GitHub: https://github.com/pagar-ani/native-topmost
-License: MIT
+License: AGPL-3.0 (GNU Affero General Public License v3.0)
 ====================================================================

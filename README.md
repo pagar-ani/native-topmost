@@ -80,4 +80,4 @@ This stops the process, unregisters the Task Scheduler entry, and wipes `%LOCALA
 ---
 
 ### License
-MIT. Do the needful and use freely.
+GNU Affero General Public License v3.0 (AGPL-3.0). Do the needful and use freely.
