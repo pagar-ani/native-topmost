@@ -1,18 +1,33 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 echo [*] Compiling native-topmost using built-in Windows csc.exe...
-set CSC=C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe
 
-if not exist "%CSC%" (
-    echo [!] csc.exe not found at %CSC%
+rem Terminate running daemon if locked for compilation
+taskkill /f /im TopmostDaemon.exe >nul 2>&1
+
+set "CSC="
+if exist "%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\csc.exe" (
+    set "CSC=%SystemRoot%\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+    set "PLATFORM=x64"
+) else if exist "%SystemRoot%\Microsoft.NET\Framework\v4.0.30319\csc.exe" (
+    set "CSC=%SystemRoot%\Microsoft.NET\Framework\v4.0.30319\csc.exe"
+    set "PLATFORM=x86"
+)
+
+if "%CSC%"=="" (
+    echo [!] Built-in .NET Framework csc.exe not found under %SystemRoot%\Microsoft.NET.
     exit /b 1
 )
 
-"%CSC%" /target:winexe /optimize+ /platform:x64 /debug- /nologo /out:TopmostDaemon.exe TopmostDaemon.cs
+pushd "%~dp0"
+"%CSC%" /target:winexe /optimize+ /platform:%PLATFORM% /debug- /nologo /out:TopmostDaemon.exe TopmostDaemon.cs
+set BUILD_ERR=%ERRORLEVEL%
+popd
 
-if %ERRORLEVEL% equ 0 (
+if %BUILD_ERR% equ 0 (
     echo [+] Compilation successful: TopmostDaemon.exe
 ) else (
-    echo [!] Compilation failed.
+    echo [!] Compilation failed with code %BUILD_ERR%.
 )
-endlocal
+
+exit /b %BUILD_ERR%

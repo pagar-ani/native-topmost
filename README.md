@@ -30,33 +30,26 @@ PowerToys Always-on-Top sets `HWND_TOPMOST` only once on hotkey trigger. When an
 
 ### How to use
 
-#### 1. Hotkey
+#### 1. Download or Build
+- **Download**: Grab `TopmostDaemon.exe` directly from [Releases](https://github.com/pagar-ani/native-topmost/releases).
+- **Or Build from Source**: Run `build.bat` (uses native Windows C# compiler; zero installs needed).
+
+#### 2. Hotkey
 - **Toggle Pin / Unpin**: `Win + Ctrl + T` on any active window.
 - **Audio indicator**: High beep on pin, low beep on unpin.
 
 *Note: Ensure PowerToys native "Always on Top" is toggled OFF in PowerToys Settings to avoid hotkey collision.*
 
-#### 2. Build from Source
-Compile directly using the C# compiler already present in your Windows installation:
-
-```cmd
-build.bat
-```
-
-Or via command line:
-```cmd
-C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /target:winexe /optimize+ /platform:x64 /debug- /nologo /out:TopmostDaemon.exe TopmostDaemon.cs
-```
-
 #### 3. Run on Startup
-Run `install.ps1` or register native Windows Scheduled Task directly:
+Run `install.ps1` from PowerShell to register silent auto-start on logon:
 
 ```powershell
-$action = New-ScheduledTaskAction -Execute "$PWD\TopmostDaemon.exe"
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0
-Register-ScheduledTask -TaskName "TopmostDaemon" -Action $action -Trigger $trigger -Settings $settings -Force
-Start-ScheduledTask -TaskName "TopmostDaemon"
+.\install.ps1
+```
+
+To remove at any time:
+```powershell
+.\uninstall.ps1
 ```
 
 ---

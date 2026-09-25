@@ -8,7 +8,7 @@ if (-not (Test-Path $exePath)) {
 
 Write-Host "[*] Registering Scheduled Task 'TopmostDaemon' for silent auto-start on logon..." -ForegroundColor Cyan
 $action = New-ScheduledTaskAction -Execute $exePath
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$trigger = New-ScheduledTaskTrigger -AtLogOn
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0
 
 Register-ScheduledTask -TaskName "TopmostDaemon" -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
