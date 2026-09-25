@@ -34,13 +34,22 @@ Start-Sleep -Milliseconds 300
 Copy-Item -Path $sourceExe -Destination $targetExe -Force
 Write-Host "[+] Binary deployed to permanent location: $targetExe" -ForegroundColor Cyan
 
-# Register scheduled task to run on current user's logon (no admin required)
+# Register scheduled task to run on current user's logon
 Write-Host "[*] Registering Scheduled Task 'TopmostDaemon' for silent startup..." -ForegroundColor Cyan
 $action = New-ScheduledTaskAction -Execute $targetExe
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0
 
-Register-ScheduledTask -TaskName "TopmostDaemon" -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if ($isAdmin) {
+    Write-Host "[+] Administrative elevation detected: arming with Highest RunLevel (UIPI immunity enabled)." -ForegroundColor Green
+    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
+    Register-ScheduledTask -TaskName "TopmostDaemon" -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
+} else {
+    Write-Host "[*] Standard user session detected: registering task without elevation." -ForegroundColor Cyan
+    Write-Host "[i] (To enable UIPI immunity for elevated windows, run install.bat as Administrator)." -ForegroundColor Yellow
+    Register-ScheduledTask -TaskName "TopmostDaemon" -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
+}
 Start-ScheduledTask -TaskName "TopmostDaemon"
 
 Write-Host "[+] Installation complete. TopmostDaemon is actively running." -ForegroundColor Green

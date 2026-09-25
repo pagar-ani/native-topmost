@@ -21,8 +21,9 @@ Open PowerToys Settings -> "Always on Top" -> Toggle it OFF.
    - Automatically deploys TopmostDaemon.exe to:
      %LOCALAPPDATA%\TopmostDaemon\
    - Sets it to start silently on Windows logon.
-   - Does NOT tamper with system-wide PowerShell ExecutionPolicy.
-   - Zero Administrator privileges required.
+   - Zero Administrator privileges required for standard use.
+   - Optional: Right-click "install.bat" -> Run as Administrator to enable
+     UIPI immunity (pinning elevated windows like Task Manager).
 
 --------------------------------------------------------------------
   HOW TO USE
