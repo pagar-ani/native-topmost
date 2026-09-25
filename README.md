@@ -80,4 +80,4 @@ This stops the process, unregisters the Task Scheduler entry, and wipes `%LOCALA
 ---
 
 ### License
-GNU Affero General Public License v3.0 (AGPL-3.0). Do the needful and use freely.
+Licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE). Open for institutional, commercial, and personal deployment.
