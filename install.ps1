@@ -14,6 +14,12 @@ if (-not (Test-Path $sourceExe)) {
     }
 }
 
+# Check for PowerToys Always-on-Top collision
+if (Get-Process -Name "PowerToys.AlwaysOnTop" -ErrorAction SilentlyContinue) {
+    Write-Host "[!] WARNING: Microsoft PowerToys Always-on-Top is currently RUNNING." -ForegroundColor Yellow
+    Write-Host "[!] Please open PowerToys Settings -> 'Always on Top' and turn it OFF to avoid shortcut collision." -ForegroundColor Yellow
+}
+
 # Create permanent user application directory
 if (-not (Test-Path $targetDir)) {
     New-Item -ItemType Directory -Path $targetDir -Force | Out-Null

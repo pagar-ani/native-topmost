@@ -30,6 +30,9 @@ PowerToys Always-on-Top sets `HWND_TOPMOST` only once on hotkey trigger. When an
 
 ### Installation & Usage
 
+> [!IMPORTANT]
+> **Mandatory Prerequisite**: If you have Microsoft PowerToys installed, open **PowerToys Settings -> Always on Top** and toggle it **OFF**. Otherwise, PowerToys holds the `Win + Ctrl + T` shortcut and blocks this tool from binding it.
+
 #### 1. Setup (Two Options)
 
 ##### Option A: Grab Pre-Built Release (Easiest)

@@ -8,6 +8,13 @@ when applications enter fullscreen mode.
 Resource Footprint: 7.5 KB binary | 2.5 MB RAM | Zero dependencies
 
 --------------------------------------------------------------------
+  PREREQUISITE (IMPORTANT!)
+--------------------------------------------------------------------
+If Microsoft PowerToys is installed on your PC:
+Open PowerToys Settings -> "Always on Top" -> Toggle it OFF.
+(Otherwise PowerToys blocks Win + Ctrl + T from binding).
+
+--------------------------------------------------------------------
   HOW TO INSTALL (One-Click)
 --------------------------------------------------------------------
 1. Double-click "install.bat".
