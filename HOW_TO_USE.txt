@@ -1,50 +1,70 @@
 ====================================================================
-  native-topmost (v1.0.0) - Ultra-lean Win32 Topmost Enforcer
+  native-topmost - Ultra-lean Win32 Topmost Enforcer
 ====================================================================
 
 Fixes Microsoft PowerToys Always-on-Top (Win + Ctrl + T) which fails
-when applications enter fullscreen mode.
+whenever applications enter fullscreen mode.
 
-Resource Footprint: 7.5 KB binary | 2.5 MB RAM | Zero dependencies
+Living-off-the-land (LOTL) implementation. No AutoHotkey, no background
+runtimes, no third-party circus.
+
+Resource Footprint: 18 KB binary | ~2.5 MB RAM | Zero dependencies
 
 --------------------------------------------------------------------
-  PREREQUISITE (IMPORTANT!)
+  PREREQUISITE (IMPORTANT)
 --------------------------------------------------------------------
-If Microsoft PowerToys is installed on your PC:
+If Microsoft PowerToys is installed on your computer:
 Open PowerToys Settings -> "Always on Top" -> Toggle it OFF.
-(Otherwise PowerToys blocks Win + Ctrl + T from binding).
+Ensure PowerToys native "Always on Top" is toggled OFF in PowerToys
+Settings to avoid hotkey collision.
 
 --------------------------------------------------------------------
   HOW TO INSTALL (One-Click)
 --------------------------------------------------------------------
-1. Double-click "install.bat".
-   - Automatically deploys TopmostDaemon.exe to:
+1. Double-click install.bat.
+   - Where does it go? It automatically deploys TopmostDaemon.exe into:
      %LOCALAPPDATA%\TopmostDaemon\
-   - Sets it to start silently on Windows logon.
-   - Zero Administrator privileges required for standard use.
-   - Optional: Right-click "install.bat" -> Run as Administrator to enable
-     UIPI immunity (pinning elevated windows like Task Manager).
+     Even if you empty your Downloads folder later, it will not break.
+   - Safe Execution: Uses scoped execution bypass for that command only.
+     Zero weakening of your system-wide PowerShell ExecutionPolicy.
+     No registry tampering.
+   - Automatically registers a silent startup task on Windows logon.
+   - Pure Windows GUI execution (winexe, zero terminal flash).
+   - Standard user privileges are sufficient for normal applications.
+   - Optional: Right-click install.bat and select "Run as Administrator"
+     to enable UIPI immunity for elevated windows such as Task Manager.
 
 --------------------------------------------------------------------
   HOW TO USE
 --------------------------------------------------------------------
-- Press [ Win + Ctrl + T ] on ANY active window to pin or unpin.
-- High beep = Window pinned on top.
-- Low beep  = Window unpinned.
-- Works over fullscreen games, browsers (F11), video players, etc.
+- Press [ Win + Ctrl + T ] on any window to pin or unpin.
+- Targeting:
+  * Standard windows: Press hotkey while the window is active.
+  * Picture-in-Picture (PiP) and media: Hover mouse cursor over the
+    window and press hotkey.
+- Audio Telemetry:
+  * High beep = Window pinned on top.
+  * Low beep  = Window unpinned.
+  * Stop beep = Ignored (system shell window or limit of 16 reached).
 
-*Note: If using Microsoft PowerToys, turn OFF its native "Always on Top"
-       in PowerToys Settings to avoid hotkey conflict.
+- Fullscreen and PiP Behaviour:
+  * Pinned windows remain visible over fullscreen games, web browsers (F11),
+    and video players.
+  * Clicks inside pinned Picture-in-Picture windows do not steal keyboard
+    focus, ensuring the Windows Taskbar does not surface over fullscreen apps.
+  * Unpinning cleanly demotes the window behind fullscreen applications.
 
 --------------------------------------------------------------------
   HOW TO UNINSTALL
 --------------------------------------------------------------------
-1. Double-click "uninstall.bat".
-   - Stops the process, removes startup task, and wipes folder cleanly.
+1. Double-click uninstall.bat.
+   - This stops the process, unregisters the Task Scheduler entry,
+     and wipes %LOCALAPPDATA%\TopmostDaemon cleanly from disk.
 
 --------------------------------------------------------------------
-  SOURCE & UPDATES
+  SOURCE AND LICENSE
 --------------------------------------------------------------------
 GitHub: https://github.com/pagar-ani/native-topmost
-License: AGPL-3.0 (Any commercial use requires explicit written permission)
+Dual-licensed under GNU AGPL-3.0 and Commercial License.
+Commercial use requires explicit written permission.
 ====================================================================

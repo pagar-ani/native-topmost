@@ -12,15 +12,17 @@ PowerToys Always-on-Top sets `HWND_TOPMOST` only once on hotkey trigger. When an
 
 `native-topmost` resolves this properly:
 1. **Root Handle Resolution**: Uses `GetAncestor(hwnd, GA_ROOT)` so Chromium, Electron (Discord, VS Code, Slack), and UWP windows pin the actual parent frame, not internal child controls.
-2. **Dynamic Topmost Stripping**: If an unpinned fullscreen app sets `WS_EX_TOPMOST` to steal focus, its topmost bit is stripped immediately and sent to `HWND_NOTOPMOST`.
-3. **Continuous Z-Guard**: Dual-trigger architecture (`EVENT_SYSTEM_FOREGROUND` hook + 350ms heartbeat) guarantees pinned windows stay at apex.
-4. **DWM Syscall Gate**: Checks `GetWindow(p, GW_HWNDPREV)`. If window is already at apex, syscalls are bypassed. Zero redundant IPC to DWM.
+2. **Cursor-Aware Targeting**: For floating media and Picture-in-Picture (PiP) viewports, hovering the cursor over the window and pressing `Win + Ctrl + T` targets the window directly without requiring keyboard focus.
+3. **Focus-Free Media Viewports**: Pinned Picture-in-Picture windows receive `WS_EX_NOACTIVATE`. Play, pause, and scrubber clicks pass directly to media controls without stealing keyboard focus from underlying applications.
+4. **Dynamic Topmost Stripping and Demotion**: If an unpinned fullscreen app sets `WS_EX_TOPMOST` to steal focus, its topmost bit is stripped immediately and sent to `HWND_NOTOPMOST`. When unpinning a window, it is cleanly demoted behind active applications.
+5. **Continuous Z-Guard**: Dual-trigger architecture (`EVENT_SYSTEM_FOREGROUND` hook + 350ms heartbeat) guarantees pinned windows stay at apex. When zero windows are pinned, the heartbeat timer terminates completely to ensure zero wakeups per second.
+6. **DWM Syscall Gate**: Checks `GetWindow(p, GW_HWNDPREV)`. If window is already at apex, syscalls are bypassed. Zero redundant IPC to DWM.
 
 ---
 
 ### Specifications
 
-- **Binary Footprint**: 7,680 bytes (7.5 KB)
+- **Binary Footprint**: 18,432 bytes (18 KB)
 - **RAM (Working Set)**: ~2.5 MB
 - **Steady-State Allocations**: 0 bytes ($GC_0 = 0$)
 - **Internal Storage**: 128 bytes contiguous flat array (2 L1 cache lines)
@@ -31,7 +33,7 @@ PowerToys Always-on-Top sets `HWND_TOPMOST` only once on hotkey trigger. When an
 ### Installation & Usage
 
 > [!IMPORTANT]
-> **Mandatory Prerequisite**: If you have Microsoft PowerToys installed, open **PowerToys Settings -> Always on Top** and toggle it **OFF**. Otherwise, PowerToys holds the `Win + Ctrl + T` shortcut and blocks this tool from binding it.
+> **Mandatory Prerequisite**: If you have Microsoft PowerToys installed, open **PowerToys Settings -> Always on Top** and toggle it **OFF**. Ensure PowerToys native "Always on Top" is toggled OFF in PowerToys Settings to avoid hotkey collision.
 
 #### 1. Setup (Two Options)
 
@@ -56,7 +58,7 @@ install.bat
 ---
 
 #### 2. Hotkey
-- **Toggle Pin / Unpin**: `Win + Ctrl + T` on any active window.
+- **Toggle Pin / Unpin**: `Win + Ctrl + T` on any active window or while hovering over floating media.
 - **Audio indicator**: High beep on pin, low beep on unpin.
 
 *Note: Ensure PowerToys native "Always on Top" is toggled OFF in PowerToys Settings to avoid hotkey collision.*
@@ -72,20 +74,13 @@ This stops the process, unregisters the Task Scheduler entry, and wipes `%LOCALA
 
 ---
 
-### Boundary Conditions, Compositor Invariants & Remedial Provisions
+### Boundary Conditions and Operational Provisions
 
-1. **Administrative Domain Restrictions (UIPI)**: Where a designated target window functions under elevated administrative integrity (e.g., Task Manager or executables fortified with anti-cheat protection), Windows User Interface Privilege Isolation strictly impedes unprivileged messaging. In such eventualities, it is necessary to register the underlying Task Scheduler entry with elevated credentials (`-RunLevel Highest`).
+1. **Administrative Domain Restrictions (UIPI)**: Where a designated target window functions under elevated administrative integrity (e.g., Task Manager or executables fortified with anti-cheat protection), Windows User Interface Privilege Isolation strictly impedes unprivileged messaging. In such eventualities, it is necessary to register the underlying Task Scheduler entry with elevated credentials (`-RunLevel Highest`). Right-click `install.bat` and select **Run as Administrator** to enable this automatically.
 2. **Hardware Exclusive Fullscreen (FSE)**: Should legacy applications bypass the Desktop Window Manager (DWM) composition pipeline via exclusive hardware scanout acquisition, verify that **"Disable fullscreen optimizations"** remains unchecked within executable properties, thereby preserving standard DWM flip presentation semantics.
-3. **Multi-Plane Overlay (MPO) Contention (Taskbar Occlusion & Pointer Latency)**: Upon heterogeneous display architectures (most conspicuously setups conjoining Intel integrated display controllers with discrete graphics adaptors under modern Windows 11 releases), pinning hardware-accelerated video viewports, detached Picture-in-Picture (PiP) canvases, or borderless surfaces may provoke hardware plane arbitration contention within the Desktop Window Manager. This manifests empirically as transient taskbar blackout or cursor scanout jitter arising from plane starvation on legacy display pipes.
+3. **Multi-Plane Overlay (MPO) Contention Remediation**: When a hardware-accelerated video or detached Picture-in-Picture (PiP) canvas plays while a windowed borderless application or desktop resides behind it, systems with Intel integrated graphics (Gen 9.5 / UHD 630) or dual-GPU Optimus configurations suffer physical compositor failure under Windows 11 WDDM 3.x. The display engine places the direct-flip video on Plane 2 while the desktop and Taskbar reside on Plane 1. When a window is pinned above Plane 2, the display controller cannot physically scan out Plane 1 in front of Plane 2. DWM triggers an emergency dynamic demotion during which the Taskbar Acrylic blur compute shader encounters a read-lock collision with the scanline readout FIFO, aborting composition and causing the **Taskbar to turn pitch black**. Simultaneously, the dedicated line FIFO for the hardware cursor (Plane 3) starves, causing the **mouse cursor to freeze or disappear**. Furthermore, Chromium viewports spawn with `WS_EX_TOPMOST` natively, which prevents standard unpin routines from demoting the surface.
 
-   To definitively resolve this condition whilst safeguarding uncompromised hardware video decoding throughput (NVDEC / Intel QuickSync), disengage Multi-Plane Overlays at the compositor boundary via an elevated PowerShell session:
-   ```powershell
-   Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Dwm" -Name "OverlayTestMode" -Type DWord -Value 5; Stop-Process -Name "dwm" -Force
-   ```
-   *(To restore standard operating system heuristics at any subsequent juncture:)*
-   ```powershell
-   Remove-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Dwm" -Name "OverlayTestMode"; Stop-Process -Name "dwm" -Force
-   ```
+   Our production engine permanently resolves this condition through silicon-level geometry disqualification (`DWMWCP_ROUNDSMALL`), hidden thumbnail redirection observers, bare layered fallbacks, and focus arbitration guards. For the comprehensive architectural root cause analysis and verbatim production source routines, please consult [MPO_FIX.md](MPO_FIX.md).
 
 ---
 
