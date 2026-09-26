@@ -90,6 +90,16 @@ This stops the process, unregisters the Task Scheduler entry, and wipes `%LOCALA
 ---
 
 ### License
-Licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
 
-**Commercial Use**: Free for personal, research, and non-commercial open-source use. Any commercial use, proprietary redistribution, or commercial deployment requires explicit written permission.
+This software is dual-licensed under the GNU Affero General Public License v3.0 (AGPL-3.0) and a separate Commercial License.
+
+#### Open Source Use (AGPL-3.0)
+Permission is granted to use, modify, and distribute this software free of charge under the terms of the [GNU AGPL-3.0](LICENSE). Under this license:
+* You must make all modifications and integrated source code available under the AGPL-3.0.
+* Network access to a modified version triggers the requirement to provide the complete source code to all network users.
+
+#### Commercial and Proprietary Exemption
+If you intend to incorporate this software into proprietary products, distribute it within closed-source environments, or deploy it without complying with the copyleft obligations of the AGPL-3.0, you must obtain a commercial license.
+
+For commercial licensing, enterprise deployment terms, or custom agreements, contact:
+* GitHub: [@pagar-ani](https://github.com/pagar-ani)
