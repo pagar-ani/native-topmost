@@ -22,10 +22,6 @@ if "%CSC%"=="" (
 pushd "%~dp0"
 "%CSC%" /target:winexe /optimize+ /platform:%PLATFORM% /debug- /nologo /out:TopmostDaemon.exe TopmostDaemon.cs
 set BUILD_ERR=%ERRORLEVEL%
-if %BUILD_ERR% equ 0 (
-    if not exist "releases" mkdir "releases"
-    copy /y "TopmostDaemon.exe" "releases\TopmostDaemon.exe" >nul
-)
 popd
 
 if %BUILD_ERR% equ 0 (

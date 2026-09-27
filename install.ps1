@@ -5,16 +5,11 @@ $targetExe = Join-Path $targetDir "TopmostDaemon.exe"
 $sourceExe = Join-Path $PSScriptRoot "TopmostDaemon.exe"
 
 if (-not (Test-Path $sourceExe)) {
-    $releaseExe = Join-Path $PSScriptRoot "releases\TopmostDaemon.exe"
-    if (Test-Path $releaseExe) {
-        Copy-Item -Path $releaseExe -Destination $sourceExe -Force
-    } else {
-        Write-Host "[*] TopmostDaemon.exe not found. Compiling from source..." -ForegroundColor Yellow
-        & "$PSScriptRoot\build.bat"
-        if (-not (Test-Path $sourceExe)) {
-            Write-Error "[!] Build failed. Exiting."
-            exit 1
-        }
+    Write-Host "[*] TopmostDaemon.exe not found. Compiling from source..." -ForegroundColor Yellow
+    & "$PSScriptRoot\build.bat"
+    if (-not (Test-Path $sourceExe)) {
+        Write-Error "[!] Build failed. Exiting."
+        exit 1
     }
 }
 

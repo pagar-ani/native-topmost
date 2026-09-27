@@ -77,6 +77,9 @@ internal static class Program {
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
     [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
+
+    [DllImport("user32.dll", SetLastError = true)]
     private static extern int GetMessageW(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
 
     [DllImport("user32.dll")]
@@ -283,6 +286,8 @@ internal static class Program {
     private const int HOTKEY_ID = 9001;
 
     private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+    private const uint EVENT_SYSTEM_MINIMIZESTART = 0x0016;
+    private const uint EVENT_SYSTEM_MINIMIZEEND = 0x0017;
     private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
     private const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
 
@@ -294,6 +299,7 @@ internal static class Program {
     private const long WS_EX_TOPMOST = 0x00000008L;
     private const long WS_EX_LAYERED = 0x00080000L;
     private const long WS_EX_NOACTIVATE = 0x08000000L;
+    private const uint LWA_ALPHA = 0x00000002;
 
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWCP_DEFAULT = 0;
@@ -336,11 +342,13 @@ internal static class Program {
     private static readonly bool[] ThumbnailApplied = new bool[MAX_PINNED];
     private static readonly bool[] LayeredApplied = new bool[MAX_PINNED];
     private static readonly bool[] NoActivateApplied = new bool[MAX_PINNED];
+    private static readonly bool[] WasIconic = new bool[MAX_PINNED];
     private static int PinnedCount = 0;
 
     private static IntPtr _hHostWnd = IntPtr.Zero;
     private static UIntPtr _timerId = UIntPtr.Zero;
     private static IntPtr _hHook = IntPtr.Zero;
+    private static IntPtr _hMinHook = IntPtr.Zero;
     private static IntPtr _lastForeground = IntPtr.Zero;
     private static int _pulseRef = 0;
     private static bool _isCleaningUp = false;
@@ -405,6 +413,12 @@ internal static class Program {
             _winEventDelegate = OnForegroundChanged;
             _hHook = SetWinEventHook(
                 EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
+                IntPtr.Zero, _winEventDelegate,
+                0, 0,
+                WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS
+            );
+            _hMinHook = SetWinEventHook(
+                EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZEEND,
                 IntPtr.Zero, _winEventDelegate,
                 0, 0,
                 WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS
@@ -484,6 +498,14 @@ internal static class Program {
 
         for (int i = 0; i < PinnedCount; i++) {
             if (IsWindow(Pinned[i])) {
+                if (WasIconic[i]) {
+                    if ((OrigExStyles[i] & WS_EX_LAYERED) == 0) {
+                        long curEx = GetWindowLongPtr(Pinned[i], GWL_EXSTYLE).ToInt64();
+                        SetWindowLongPtr(Pinned[i], GWL_EXSTYLE, new IntPtr(curEx & ~WS_EX_LAYERED));
+                    } else {
+                        SetLayeredWindowAttributes(Pinned[i], 0, 255, LWA_ALPHA);
+                    }
+                }
                 RestoreMpoDefense(i);
                 SetWindowPos(Pinned[i], HWND_NOTOPMOST, 0, 0, 0, 0, SWP_STEADY_FLAGS);
             }
@@ -498,6 +520,11 @@ internal static class Program {
         if (_hHook != IntPtr.Zero) {
             UnhookWinEvent(_hHook);
             _hHook = IntPtr.Zero;
+        }
+
+        if (_hMinHook != IntPtr.Zero) {
+            UnhookWinEvent(_hMinHook);
+            _hMinHook = IntPtr.Zero;
         }
 
         if (_hHostWnd != IntPtr.Zero) {
@@ -565,6 +592,12 @@ internal static class Program {
                         break;
                     }
                 }
+                if (target == IntPtr.Zero && !IsSystemShellWindow(rootUnder)) {
+                    long ex = GetWindowLongPtr(rootUnder, GWL_EXSTYLE).ToInt64();
+                    if ((ex & WS_EX_NOACTIVATE) != 0) {
+                        target = rootUnder;
+                    }
+                }
             }
         }
 
@@ -596,6 +629,7 @@ internal static class Program {
         }
 
         int idx = PinnedCount;
+        WasIconic[idx] = false;
 
         ApplyMpoDefense(target, idx);
 
@@ -612,6 +646,15 @@ internal static class Program {
 
     private static void UnpinIndex(int i) {
         IntPtr hwnd = Pinned[i];
+
+        if (WasIconic[i]) {
+            if ((OrigExStyles[i] & WS_EX_LAYERED) == 0) {
+                long curEx = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
+                SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(curEx & ~WS_EX_LAYERED));
+            } else {
+                SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
+            }
+        }
 
         RestoreMpoDefense(i);
 
@@ -636,6 +679,7 @@ internal static class Program {
         ThumbnailApplied[i] = ThumbnailApplied[tail];
         LayeredApplied[i] = LayeredApplied[tail];
         NoActivateApplied[i] = NoActivateApplied[tail];
+        WasIconic[i] = WasIconic[tail];
 
         Pinned[tail] = IntPtr.Zero;
         OrigCorners[tail] = 0;
@@ -645,6 +689,7 @@ internal static class Program {
         ThumbnailApplied[tail] = false;
         LayeredApplied[tail] = false;
         NoActivateApplied[tail] = false;
+        WasIconic[tail] = false;
 
         if (PinnedCount == 0 && _timerId != UIntPtr.Zero && _hHostWnd != IntPtr.Zero) {
             KillTimer(_hHostWnd, _timerId);
@@ -848,7 +893,39 @@ internal static class Program {
 
         for (int i = 0; i < PinnedCount; i++) {
             IntPtr p = Pinned[i];
-            if (IsIconic(p) || !IsWindowVisible(p)) continue;
+            if (IsIconic(p)) {
+                if (!WasIconic[i]) {
+                    WasIconic[i] = true;
+                    if (CornerApplied[i]) {
+                        int defCorner = DWMWCP_DEFAULT;
+                        try { DwmSetWindowAttribute(p, DWMWA_WINDOW_CORNER_PREFERENCE, ref defCorner, sizeof(int)); } catch { }
+                    }
+                    long curEx = GetWindowLongPtr(p, GWL_EXSTYLE).ToInt64();
+                    if ((curEx & WS_EX_LAYERED) == 0) {
+                        SetWindowLongPtr(p, GWL_EXSTYLE, new IntPtr(curEx | WS_EX_LAYERED));
+                    }
+                    SetLayeredWindowAttributes(p, 0, 0, LWA_ALPHA);
+                    SetWindowPos(p, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOSENDCHANGING);
+                }
+                continue;
+            }
+
+            if (WasIconic[i]) {
+                WasIconic[i] = false;
+                if (!LayeredApplied[i] && (OrigExStyles[i] & WS_EX_LAYERED) == 0) {
+                    long curEx = GetWindowLongPtr(p, GWL_EXSTYLE).ToInt64();
+                    SetWindowLongPtr(p, GWL_EXSTYLE, new IntPtr(curEx & ~WS_EX_LAYERED));
+                } else {
+                    SetLayeredWindowAttributes(p, 0, 255, LWA_ALPHA);
+                }
+                if (CornerApplied[i]) {
+                    int pref = DWMWCP_ROUNDSMALL;
+                    try { DwmSetWindowAttribute(p, DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, sizeof(int)); } catch { }
+                }
+                SetWindowPos(p, HWND_TOPMOST, 0, 0, 0, 0, SWP_STEADY_FLAGS);
+            }
+
+            if (!IsWindowVisible(p)) continue;
 
             if (fgChanged || GetWindow(p, GW_HWNDPREV) != IntPtr.Zero) {
                 SetWindowPos(p, HWND_TOPMOST, 0, 0, 0, 0, SWP_STEADY_FLAGS);
@@ -856,7 +933,7 @@ internal static class Program {
         }
 
         for (int i = 0; i < PinnedCount; i++) {
-            if (NoActivateApplied[i]) {
+            if (NoActivateApplied[i] && !IsIconic(Pinned[i]) && IsWindowVisible(Pinned[i])) {
                 SuppressTaskbarIfFullscreen(Pinned[i]);
             }
         }
