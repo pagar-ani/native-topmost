@@ -36,6 +36,9 @@ internal static class Program {
     private static extern bool IsIconic(IntPtr hWnd);
 
     [DllImport("user32.dll")]
+    private static extern bool IsZoomed(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(IntPtr hWnd);
 
     [DllImport("user32.dll")]
@@ -933,8 +936,31 @@ internal static class Program {
         }
 
         for (int i = 0; i < PinnedCount; i++) {
-            if (NoActivateApplied[i] && !IsIconic(Pinned[i]) && IsWindowVisible(Pinned[i])) {
-                SuppressTaskbarIfFullscreen(Pinned[i]);
+            IntPtr p = Pinned[i];
+            if (!IsWindow(p) || IsIconic(p) || !IsWindowVisible(p)) continue;
+
+            // VECTOR 45: Dynamic Morph-Back Watcher (mpv / video maximize & restore focus recovery)
+            RECT rc;
+            if (GetWindowRect(p, out rc)) {
+                int w = rc.right - rc.left;
+                int h = rc.bottom - rc.top;
+                bool isLargeOrZoomed = (w > 1280 || h > 720 || IsZoomed(p) || IsTextInputClass(p));
+
+                if (NoActivateApplied[i] && isLargeOrZoomed) {
+                    long cur = GetWindowLongPtr(p, GWL_EXSTYLE).ToInt64();
+                    SetWindowLongPtr(p, GWL_EXSTYLE, new IntPtr(cur & ~WS_EX_NOACTIVATE));
+                    SetWindowPos(p, IntPtr.Zero, 0, 0, 0, 0, SWP_STEADY_FLAGS | SWP_FRAMECHANGED | SWP_NOZORDER);
+                    NoActivateApplied[i] = false;
+                } else if (!NoActivateApplied[i] && !isLargeOrZoomed && (OrigExStyles[i] & WS_EX_NOACTIVATE) == 0) {
+                    long cur = GetWindowLongPtr(p, GWL_EXSTYLE).ToInt64();
+                    SetWindowLongPtr(p, GWL_EXSTYLE, new IntPtr(cur | WS_EX_NOACTIVATE));
+                    SetWindowPos(p, IntPtr.Zero, 0, 0, 0, 0, SWP_STEADY_FLAGS | SWP_FRAMECHANGED | SWP_NOZORDER);
+                    NoActivateApplied[i] = true;
+                }
+            }
+
+            if (NoActivateApplied[i]) {
+                SuppressTaskbarIfFullscreen(p);
             }
         }
 

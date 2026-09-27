@@ -25,10 +25,14 @@ if (-not (Test-Path $targetDir)) {
 Stop-ScheduledTask -TaskName "TopmostDaemon" -ErrorAction SilentlyContinue
 $running = Get-Process -Name "TopmostDaemon" -ErrorAction SilentlyContinue
 if ($running) {
-    Stop-Process -Name "TopmostDaemon" -Force -ErrorAction SilentlyContinue
-    $running | Wait-Process -Timeout 3 -ErrorAction SilentlyContinue
+    $running.CloseMainWindow() | Out-Null
+    $exited = $running | Wait-Process -Timeout 2 -ErrorAction SilentlyContinue
+    if (Get-Process -Name "TopmostDaemon" -ErrorAction SilentlyContinue) {
+        Stop-Process -Name "TopmostDaemon" -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 200
+    }
 }
-Start-Sleep -Milliseconds 200
+Start-Sleep -Milliseconds 100
 
 $copied = $false
 for ($i = 0; $i -lt 5; $i++) {
