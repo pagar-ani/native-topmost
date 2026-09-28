@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -80,6 +79,9 @@ internal static class Program {
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
     [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetLayeredWindowAttributes(IntPtr hwnd, out uint pcrKey, out byte pbAlpha, out uint pdwFlags);
+
+    [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetLayeredWindowAttributes(IntPtr hwnd, uint crKey, byte bAlpha, uint dwFlags);
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -93,6 +95,9 @@ internal static class Program {
 
     [DllImport("user32.dll")]
     private static extern void PostQuitMessage(int nExitCode);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool PostMessageW(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc, WinEventDelegate lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
@@ -133,11 +138,11 @@ internal static class Program {
     [DllImport("user32.dll")]
     private static extern bool SetProcessDPIAware();
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetProcessDpiAwarenessContext(IntPtr value);
+
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int nIndex);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool SystemParametersInfo(uint uiAction, uint uiParam, ref bool pvParam, uint fWinIni);
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
@@ -151,20 +156,8 @@ internal static class Program {
     [DllImport("user32.dll")]
     private static extern IntPtr WindowFromPoint(POINT Point);
 
-    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-    private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetDesktopWindow();
-
-    [DllImport("kernel32.dll")]
-    private static extern IntPtr GetCurrentProcess();
-
     [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
     private static extern IntPtr GetModuleHandle(string lpModuleName);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool SetProcessWorkingSetSize(IntPtr hProcess, IntPtr dwMinimumWorkingSetSize, IntPtr dwMaximumWorkingSetSize);
 
     [DllImport("kernel32.dll", ExactSpelling = true)]
     private static extern uint SetThreadExecutionState(uint esFlags);
@@ -172,23 +165,14 @@ internal static class Program {
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool SetConsoleCtrlHandler(ConsoleCtrlDelegate handler, bool add);
 
+    [DllImport("kernel32.dll")]
+    private static extern ulong GetTickCount64();
+
     [DllImport("dwmapi.dll", ExactSpelling = true)]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
 
     [DllImport("dwmapi.dll", ExactSpelling = true)]
     private static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out int pvAttribute, int cbAttribute);
-
-    [DllImport("dwmapi.dll", ExactSpelling = true)]
-    private static extern int DwmRegisterThumbnail(IntPtr hwndDest, IntPtr hwndSrc, out IntPtr phThumbnailId);
-
-    [DllImport("dwmapi.dll", ExactSpelling = true)]
-    private static extern int DwmUnregisterThumbnail(IntPtr hThumbnailId);
-
-    [DllImport("dwmapi.dll", ExactSpelling = true)]
-    private static extern int DwmUpdateThumbnailProperties(IntPtr hThumbnailId, ref DWM_THUMBNAIL_PROPERTIES props);
-
-    [DllImport("dwmapi.dll", ExactSpelling = true)]
-    private static extern int DwmFlush();
 
     [DllImport("wtsapi32.dll", SetLastError = true)]
     private static extern bool WTSRegisterSessionNotification(IntPtr hWnd, uint dwFlags);
@@ -246,18 +230,6 @@ internal static class Program {
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct DWM_THUMBNAIL_PROPERTIES {
-        public uint dwFlags;
-        public RECT rcDestination;
-        public RECT rcSource;
-        public byte opacity;
-        [MarshalAs(UnmanagedType.Bool)]
-        public bool fVisible;
-        [MarshalAs(UnmanagedType.Bool)]
-        public bool fSourceClientAreaOnly;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
     private struct GUITHREADINFO {
         public int cbSize;
         public uint flags;
@@ -270,9 +242,21 @@ internal static class Program {
         public RECT rcCaret;
     }
 
+    private struct PinnedEntry {
+        public IntPtr Hwnd;
+        public int OrigCorner;
+        public long OrigExStyle;
+        public byte OrigAlpha;
+        public uint OrigLwaFlags;
+        public bool CornerApplied;
+        public bool LayeredApplied;
+        public bool NoActivateApplied;
+        public bool WasIconic;
+    }
+
     private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
     private static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
-    private static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
+    private static readonly IntPtr HWND_MESSAGE = new IntPtr(-3);
 
     private const uint SWP_NOSIZE = 0x0001;
     private const uint SWP_NOMOVE = 0x0002;
@@ -295,22 +279,18 @@ internal static class Program {
     private const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
 
     private const uint GA_ROOT = 2;
-    private const uint GW_HWNDNEXT = 2;
     private const uint GW_HWNDPREV = 3;
-    private const uint GW_CHILD = 5;
     private const int GWL_EXSTYLE = -20;
-    private const long WS_EX_TOPMOST = 0x00000008L;
     private const long WS_EX_LAYERED = 0x00080000L;
     private const long WS_EX_NOACTIVATE = 0x08000000L;
+    private const long WS_EX_APPWINDOW = 0x00040000L;
     private const uint LWA_ALPHA = 0x00000002;
 
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    private const int DWMWA_CLOAKED = 14;
     private const int DWMWCP_DEFAULT = 0;
-    private const int DWMWCP_DONOTROUND = 1;
     private const int DWMWCP_ROUNDSMALL = 3;
-
-    private const uint DWM_TNP_VISIBLE = 0x00000008;
-    private const uint DWM_TNP_OPACITY = 0x00000004;
+    private const int CBINT = 4;
 
     private const uint ES_CONTINUOUS = 0x80000000;
     private const uint ES_DISPLAY_REQUIRED = 0x00000002;
@@ -336,43 +316,61 @@ internal static class Program {
     private const uint MONITOR_DEFAULTTONEAREST = 2;
 
     private const int MAX_PINNED = 16;
+    private const uint HEARTBEAT_MS = 350;
+    private const int SMALL_W = 1280;
+    private const int SMALL_H = 720;
+    private const uint DPI_CORNER_MAX = 168;
+    private const ulong PULSE_MS = 2000;
+    private const int CLASS_BUF = 256;
+    private const uint ERROR_ACCESS_DENIED = 5;
 
-    private static readonly IntPtr[] Pinned = new IntPtr[MAX_PINNED];
-    private static readonly int[] OrigCorners = new int[MAX_PINNED];
-    private static readonly long[] OrigExStyles = new long[MAX_PINNED];
-    private static readonly IntPtr[] Thumbnails = new IntPtr[MAX_PINNED];
-    private static readonly bool[] CornerApplied = new bool[MAX_PINNED];
-    private static readonly bool[] ThumbnailApplied = new bool[MAX_PINNED];
-    private static readonly bool[] LayeredApplied = new bool[MAX_PINNED];
-    private static readonly bool[] NoActivateApplied = new bool[MAX_PINNED];
-    private static readonly bool[] WasIconic = new bool[MAX_PINNED];
+    private static readonly IntPtr DPI_AWARE_V2 = new IntPtr(-4);
+
+    private static readonly PinnedEntry[] Pinned = new PinnedEntry[MAX_PINNED];
     private static int PinnedCount = 0;
 
     private static IntPtr _hHostWnd = IntPtr.Zero;
     private static UIntPtr _timerId = UIntPtr.Zero;
     private static IntPtr _hHook = IntPtr.Zero;
     private static IntPtr _hMinHook = IntPtr.Zero;
-    private static IntPtr _lastForeground = IntPtr.Zero;
-    private static int _pulseRef = 0;
     private static bool _isCleaningUp = false;
+
+    private static ulong _pulseUntil = 0;
+    private static bool _pulseActive = false;
 
     private static WndProcDelegate _wndProcDelegate;
     private static WinEventDelegate _winEventDelegate;
     private static TimerDelegate _timerDelegate;
     private static ConsoleCtrlDelegate _consoleCtrlDelegate;
 
+    private static readonly int SizeOfMonitorInfo = Marshal.SizeOf(typeof(MONITORINFO));
+    private static readonly int SizeOfGuiInfo = Marshal.SizeOf(typeof(GUITHREADINFO));
+    private static readonly int SizeOfWndClass = Marshal.SizeOf(typeof(WNDCLASSEX));
+
     [STAThread]
     private static void Main() {
-        bool createdNew;
-        using (Mutex singleInstanceMutex = new Mutex(true, @"Local\NativeTopmostDaemon_SingleInstanceMutex", out createdNew)) {
+        bool createdNew = false;
+        Mutex singleInstanceMutex = null;
+        try {
+            singleInstanceMutex = new Mutex(true, @"Local\NativeTopmostDaemon_SingleInstanceMutex", out createdNew);
+        } catch (AbandonedMutexException ex) {
+            createdNew = true;
+            try { singleInstanceMutex = ex.Mutex; } catch { singleInstanceMutex = null; }
+            if (singleInstanceMutex == null) {
+                try { singleInstanceMutex = new Mutex(true, @"Local\NativeTopmostDaemon_SingleInstanceMutex", out createdNew); }
+                catch { return; }
+            }
+        } catch {
+            return;
+        }
+
+        using (singleInstanceMutex) {
             if (!createdNew) {
                 MessageBeep(0x00000010);
                 return;
             }
 
-            try {
-                SetProcessDPIAware();
-            } catch { }
+            TryEnableDpiAwareness();
 
             _consoleCtrlDelegate = OnConsoleCtrl;
             SetConsoleCtrlHandler(_consoleCtrlDelegate, true);
@@ -380,38 +378,40 @@ internal static class Program {
             IntPtr hInstance = GetModuleHandle(null);
             _wndProcDelegate = HostWndProc;
             WNDCLASSEX wc = new WNDCLASSEX();
-            wc.cbSize = (uint)Marshal.SizeOf(typeof(WNDCLASSEX));
+            wc.cbSize = (uint)SizeOfWndClass;
             wc.lpfnWndProc = _wndProcDelegate;
             wc.hInstance = hInstance;
             wc.lpszClassName = "NativeTopmostHostClass";
 
             ushort regResult = RegisterClassEx(ref wc);
             if (regResult == 0 && Marshal.GetLastWin32Error() != 1410) {
+                SetConsoleCtrlHandler(_consoleCtrlDelegate, false);
                 return;
             }
 
             _hHostWnd = CreateWindowEx(
-                0x00080000,
+                0,
                 "NativeTopmostHostClass",
                 "NativeTopmostHost",
-                0x80000000,
-                0, 0, 1, 1,
-                IntPtr.Zero, IntPtr.Zero, hInstance, IntPtr.Zero
+                0,
+                0, 0, 0, 0,
+                HWND_MESSAGE, IntPtr.Zero, hInstance, IntPtr.Zero
             );
 
             if (_hHostWnd == IntPtr.Zero) {
+                SetConsoleCtrlHandler(_consoleCtrlDelegate, false);
                 return;
             }
 
             if (!RegisterHotKey(_hHostWnd, HOTKEY_ID, MOD_CONTROL | MOD_WIN, VK_T)) {
                 MessageBeep(0x00000010);
                 DestroyWindow(_hHostWnd);
+                _hHostWnd = IntPtr.Zero;
+                SetConsoleCtrlHandler(_consoleCtrlDelegate, false);
                 return;
             }
 
-            try {
-                WTSRegisterSessionNotification(_hHostWnd, NOTIFY_FOR_THIS_SESSION);
-            } catch { }
+            try { WTSRegisterSessionNotification(_hHostWnd, NOTIFY_FOR_THIS_SESSION); } catch { }
 
             _winEventDelegate = OnForegroundChanged;
             _hHook = SetWinEventHook(
@@ -429,19 +429,34 @@ internal static class Program {
 
             _timerDelegate = OnHeartbeat;
 
-            try {
-                SetProcessWorkingSetSize(GetCurrentProcess(), new IntPtr(-1), new IntPtr(-1));
-            } catch { }
-
+            int exitCode = 0;
             try {
                 MSG msg;
-                while (GetMessageW(out msg, IntPtr.Zero, 0, 0) > 0) {
+                int r;
+                while ((r = GetMessageW(out msg, IntPtr.Zero, 0, 0)) > 0) {
                     TranslateMessage(ref msg);
                     DispatchMessageW(ref msg);
                 }
+                if (r == 0) {
+                    exitCode = msg.wParam.ToInt32();
+                } else {
+                    exitCode = 1;
+                }
             } finally {
                 Cleanup();
+                Environment.ExitCode = exitCode;
             }
+        }
+    }
+
+    private static void TryEnableDpiAwareness() {
+        try {
+            IntPtr prev = SetProcessDpiAwarenessContext(DPI_AWARE_V2);
+            if (prev == IntPtr.Zero && Marshal.GetLastWin32Error() != 0) {
+                try { SetProcessDPIAware(); } catch { }
+            }
+        } catch {
+            try { SetProcessDPIAware(); } catch { }
         }
     }
 
@@ -458,12 +473,13 @@ internal static class Program {
                 ReArmAll();
                 return IntPtr.Zero;
 
-            case WM_POWERBROADCAST:
+            case WM_POWERBROADCAST: {
                 long pbt = wParam.ToInt64();
                 if (pbt == PBT_APMRESUMEAUTOMATIC || pbt == PBT_APMRESUMESUSPEND) {
                     ReArmAll();
                 }
                 return IntPtr.Zero;
+            }
 
             case WM_WTSSESSION_CHANGE:
                 if (wParam.ToInt64() == WTS_SESSION_UNLOCK) {
@@ -477,6 +493,7 @@ internal static class Program {
             case WM_ENDSESSION:
                 if (wParam != IntPtr.Zero) {
                     Cleanup();
+                    PostQuitMessage(0);
                 }
                 return IntPtr.Zero;
 
@@ -491,8 +508,12 @@ internal static class Program {
     }
 
     private static bool OnConsoleCtrl(uint ctrlType) {
-        Cleanup();
-        return false;
+        try {
+            if (_hHostWnd != IntPtr.Zero) {
+                PostMessageW(_hHostWnd, WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+            }
+        } catch { }
+        return true;
     }
 
     private static void Cleanup() {
@@ -500,20 +521,38 @@ internal static class Program {
         _isCleaningUp = true;
 
         for (int i = 0; i < PinnedCount; i++) {
-            if (IsWindow(Pinned[i])) {
-                if (WasIconic[i]) {
-                    if ((OrigExStyles[i] & WS_EX_LAYERED) == 0) {
-                        long curEx = GetWindowLongPtr(Pinned[i], GWL_EXSTYLE).ToInt64();
-                        SetWindowLongPtr(Pinned[i], GWL_EXSTYLE, new IntPtr(curEx & ~WS_EX_LAYERED));
-                    } else {
-                        SetLayeredWindowAttributes(Pinned[i], 0, 255, LWA_ALPHA);
+            IntPtr hw = Pinned[i].Hwnd;
+            if (hw == IntPtr.Zero) continue;
+            if (IsWindow(hw)) {
+                if (Pinned[i].WasIconic) {
+                    long curEx = GetWindowLongPtr(hw, GWL_EXSTYLE).ToInt64();
+                    long nextEx = curEx;
+                    if (!Pinned[i].LayeredApplied && (Pinned[i].OrigExStyle & WS_EX_LAYERED) == 0) {
+                        nextEx &= ~WS_EX_LAYERED;
+                    }
+                    if ((Pinned[i].OrigExStyle & WS_EX_APPWINDOW) == 0) {
+                        nextEx &= ~WS_EX_APPWINDOW;
+                    }
+                    if (Pinned[i].NoActivateApplied) {
+                        nextEx |= WS_EX_NOACTIVATE;
+                    }
+                    if (nextEx != curEx) {
+                        try { SetWindowLongPtr(hw, GWL_EXSTYLE, new IntPtr(nextEx)); } catch { }
+                    }
+                    if ((nextEx & WS_EX_LAYERED) != 0) {
+                        try {
+                            SetLayeredWindowAttributes(hw, 0, Pinned[i].OrigAlpha, (Pinned[i].OrigLwaFlags != 0) ? Pinned[i].OrigLwaFlags : LWA_ALPHA);
+                        } catch { }
                     }
                 }
                 RestoreMpoDefense(i);
-                SetWindowPos(Pinned[i], HWND_NOTOPMOST, 0, 0, 0, 0, SWP_STEADY_FLAGS);
+                SetWindowPos(hw, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_STEADY_FLAGS | SWP_FRAMECHANGED);
             }
+            Pinned[i] = new PinnedEntry();
         }
         PinnedCount = 0;
+
+        ResetDisplayPulse();
 
         if (_timerId != UIntPtr.Zero && _hHostWnd != IntPtr.Zero) {
             KillTimer(_hHostWnd, _timerId);
@@ -544,66 +583,35 @@ internal static class Program {
         return (root != IntPtr.Zero) ? root : hwnd;
     }
 
-    private static IntPtr FindFullscreenWindow(IntPtr hMonitor, IntPtr ignoreWnd) {
-        if (hMonitor == IntPtr.Zero) return IntPtr.Zero;
-        MONITORINFO mi = new MONITORINFO();
-        mi.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
-        if (!GetMonitorInfo(hMonitor, ref mi)) return IntPtr.Zero;
-
-        IntPtr hwnd = GetWindow(GetDesktopWindow(), GW_CHILD);
-        while (hwnd != IntPtr.Zero) {
-            if (hwnd != ignoreWnd && IsWindowVisible(hwnd) && !IsIconic(hwnd)) {
-                if (!IsSystemShellWindow(hwnd)) {
-                    RECT rc;
-                    if (GetWindowRect(hwnd, out rc)) {
-                        if (rc.left <= mi.rcMonitor.left && rc.top <= mi.rcMonitor.top &&
-                            rc.right >= mi.rcMonitor.right && rc.bottom >= mi.rcMonitor.bottom) {
-                            return hwnd;
-                        }
-                    }
-                }
-            }
-            hwnd = GetWindow(hwnd, GW_HWNDNEXT);
-        }
-        return IntPtr.Zero;
-    }
-
-    private static void SuppressTaskbarIfFullscreen(IntPtr targetWnd) {
-        IntPtr hMon = MonitorFromWindow(targetWnd, MONITOR_DEFAULTTONEAREST);
-        if (FindFullscreenWindow(hMon, targetWnd) != IntPtr.Zero) {
-            IntPtr hTaskbar = FindWindow("Shell_TrayWnd", null);
-            if (hTaskbar != IntPtr.Zero) {
-                SetWindowPos(hTaskbar, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-            }
-            IntPtr hSecTaskbar = FindWindow("Shell_SecondaryTrayWnd", null);
-            if (hSecTaskbar != IntPtr.Zero) {
-                SetWindowPos(hSecTaskbar, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-            }
-        }
-    }
-
     private static void ToggleActiveWindow() {
-        IntPtr target = IntPtr.Zero;
+        IntPtr toggleOff = IntPtr.Zero;
+        IntPtr rootUnder = IntPtr.Zero;
         POINT pt;
         if (GetCursorPos(out pt)) {
             IntPtr wndUnder = WindowFromPoint(pt);
             if (wndUnder != IntPtr.Zero) {
-                IntPtr rootUnder = GetTrueRoot(wndUnder);
+                rootUnder = GetTrueRoot(wndUnder);
                 for (int i = 0; i < PinnedCount; i++) {
-                    if (Pinned[i] == rootUnder) {
-                        target = rootUnder;
+                    if (Pinned[i].Hwnd == rootUnder) {
+                        toggleOff = rootUnder;
                         break;
-                    }
-                }
-                if (target == IntPtr.Zero && !IsSystemShellWindow(rootUnder)) {
-                    long ex = GetWindowLongPtr(rootUnder, GWL_EXSTYLE).ToInt64();
-                    if ((ex & WS_EX_NOACTIVATE) != 0) {
-                        target = rootUnder;
                     }
                 }
             }
         }
 
+        IntPtr target = toggleOff;
+        if (target == IntPtr.Zero && rootUnder != IntPtr.Zero) {
+            if (!IsSystemShellWindow(rootUnder) && !IsCloaked(rootUnder) &&
+                IsWindowVisible(rootUnder) && !IsIconic(rootUnder) &&
+                !IsTransientPopup(rootUnder)) {
+                long ex = 0;
+                try { ex = GetWindowLongPtr(rootUnder, GWL_EXSTYLE).ToInt64(); } catch { ex = 0; }
+                if ((ex & WS_EX_NOACTIVATE) != 0) {
+                    target = rootUnder;
+                }
+            }
+        }
         if (target == IntPtr.Zero) {
             IntPtr fg = GetForegroundWindow();
             if (fg != IntPtr.Zero) {
@@ -618,8 +626,13 @@ internal static class Program {
             return;
         }
 
+        if (IsCloaked(target)) {
+            MessageBeep(0x00000010);
+            return;
+        }
+
         for (int i = 0; i < PinnedCount; i++) {
-            if (Pinned[i] == target) {
+            if (Pinned[i].Hwnd == target) {
                 UnpinIndex(i);
                 MessageBeep(0x00000000);
                 return;
@@ -632,353 +645,392 @@ internal static class Program {
         }
 
         int idx = PinnedCount;
-        WasIconic[idx] = false;
+        Pinned[idx] = new PinnedEntry();
+        Pinned[idx].Hwnd = target;
+        Pinned[idx].WasIconic = false;
 
         ApplyMpoDefense(target, idx);
 
-        Pinned[PinnedCount++] = target;
+        PinnedCount++;
 
         if (PinnedCount == 1 && _timerId == UIntPtr.Zero && _hHostWnd != IntPtr.Zero) {
-            _timerId = SetTimer(_hHostWnd, new UIntPtr(1), 350, _timerDelegate);
+            _timerId = SetTimer(_hHostWnd, new UIntPtr(1), HEARTBEAT_MS, _timerDelegate);
         }
 
-        SetWindowPos(target, HWND_TOPMOST, 0, 0, 0, 0, SWP_STEADY_FLAGS);
-        SuppressTaskbarIfFullscreen(target);
+        if (!SetWindowPos(target, HWND_TOPMOST, 0, 0, 0, 0, SWP_STEADY_FLAGS)) {
+            int err = Marshal.GetLastWin32Error();
+            RestoreMpoDefense(idx);
+            Pinned[idx] = new PinnedEntry();
+            PinnedCount--;
+            if (PinnedCount == 0 && _timerId != UIntPtr.Zero && _hHostWnd != IntPtr.Zero) {
+                KillTimer(_hHostWnd, _timerId);
+                _timerId = UIntPtr.Zero;
+                ResetDisplayPulse();
+            }
+            MessageBeep(0x00000010);
+            return;
+        }
+
         MessageBeep(0x00000040);
     }
 
     private static void UnpinIndex(int i) {
-        IntPtr hwnd = Pinned[i];
+        if (i < 0 || i >= PinnedCount) return;
+        PinnedEntry e = Pinned[i];
+        IntPtr hwnd = e.Hwnd;
+        bool alive = (hwnd != IntPtr.Zero) && IsWindow(hwnd);
 
-        if (WasIconic[i]) {
-            if ((OrigExStyles[i] & WS_EX_LAYERED) == 0) {
+        if (alive) {
+            if (e.WasIconic) {
                 long curEx = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
-                SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(curEx & ~WS_EX_LAYERED));
-            } else {
-                SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA);
+                long nextEx = curEx;
+                if (!e.LayeredApplied && (e.OrigExStyle & WS_EX_LAYERED) == 0) {
+                    nextEx &= ~WS_EX_LAYERED;
+                }
+                if ((e.OrigExStyle & WS_EX_APPWINDOW) == 0) {
+                    nextEx &= ~WS_EX_APPWINDOW;
+                }
+                if (e.NoActivateApplied) {
+                    nextEx |= WS_EX_NOACTIVATE;
+                }
+                if (nextEx != curEx) {
+                    try { SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(nextEx)); } catch { }
+                }
+                if ((nextEx & WS_EX_LAYERED) != 0) {
+                    try {
+                        SetLayeredWindowAttributes(hwnd, 0, e.OrigAlpha, (e.OrigLwaFlags != 0) ? e.OrigLwaFlags : LWA_ALPHA);
+                    } catch { }
+                }
             }
-        }
-
-        RestoreMpoDefense(i);
-
-        long currentEx = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
-        if ((currentEx & WS_EX_TOPMOST) != 0) {
-            SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(currentEx & ~WS_EX_TOPMOST));
-        }
-        SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_STEADY_FLAGS | SWP_FRAMECHANGED);
-
-        IntPtr hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-        IntPtr hFs = FindFullscreenWindow(hMon, hwnd);
-        if (hFs != IntPtr.Zero) {
-            SetWindowPos(hwnd, hFs, 0, 0, 0, 0, SWP_STEADY_FLAGS);
+            RestoreMpoDefense(i);
+            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_STEADY_FLAGS | SWP_FRAMECHANGED);
         }
 
         int tail = --PinnedCount;
-        Pinned[i] = Pinned[tail];
-        OrigCorners[i] = OrigCorners[tail];
-        OrigExStyles[i] = OrigExStyles[tail];
-        Thumbnails[i] = Thumbnails[tail];
-        CornerApplied[i] = CornerApplied[tail];
-        ThumbnailApplied[i] = ThumbnailApplied[tail];
-        LayeredApplied[i] = LayeredApplied[tail];
-        NoActivateApplied[i] = NoActivateApplied[tail];
-        WasIconic[i] = WasIconic[tail];
-
-        Pinned[tail] = IntPtr.Zero;
-        OrigCorners[tail] = 0;
-        OrigExStyles[tail] = 0;
-        Thumbnails[tail] = IntPtr.Zero;
-        CornerApplied[tail] = false;
-        ThumbnailApplied[tail] = false;
-        LayeredApplied[tail] = false;
-        NoActivateApplied[tail] = false;
-        WasIconic[tail] = false;
+        if (i != tail) {
+            Pinned[i] = Pinned[tail];
+        }
+        Pinned[tail] = new PinnedEntry();
 
         if (PinnedCount == 0 && _timerId != UIntPtr.Zero && _hHostWnd != IntPtr.Zero) {
             KillTimer(_hHostWnd, _timerId);
             _timerId = UIntPtr.Zero;
-            try {
-                SetProcessWorkingSetSize(GetCurrentProcess(), new IntPtr(-1), new IntPtr(-1));
-            } catch { }
+            ResetDisplayPulse();
         }
     }
 
     private static void ApplyMpoDefense(IntPtr hwnd, int idx) {
-        CornerApplied[idx] = false;
-        ThumbnailApplied[idx] = false;
-        LayeredApplied[idx] = false;
-        NoActivateApplied[idx] = false;
-        Thumbnails[idx] = IntPtr.Zero;
+        PinnedEntry e = Pinned[idx];
+        e.CornerApplied = false;
+        e.LayeredApplied = false;
+        e.NoActivateApplied = false;
+        e.WasIconic = false;
+        e.OrigCorner = DWMWCP_DEFAULT;
+        e.OrigExStyle = 0;
+        e.OrigAlpha = 255;
+        e.OrigLwaFlags = 0;
 
-        long origEx = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
-        OrigExStyles[idx] = origEx;
+        long origEx = 0;
+        try { origEx = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64(); } catch { origEx = 0; }
+        e.OrigExStyle = origEx;
+
+        if ((origEx & WS_EX_LAYERED) != 0) {
+            try {
+                uint key;
+                byte alpha;
+                uint flags;
+                if (GetLayeredWindowAttributes(hwnd, out key, out alpha, out flags)) {
+                    e.OrigAlpha = alpha;
+                    e.OrigLwaFlags = flags;
+                }
+            } catch { }
+        }
 
         int origCorner = DWMWCP_DEFAULT;
         try {
-            if (DwmGetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, out origCorner, sizeof(int)) != 0) {
-                origCorner = DWMWCP_DEFAULT;
+            int tmp;
+            if (DwmGetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, out tmp, CBINT) != 0) {
+                tmp = DWMWCP_DEFAULT;
             }
+            origCorner = tmp;
         } catch {
             origCorner = DWMWCP_DEFAULT;
         }
-        OrigCorners[idx] = origCorner;
+        e.OrigCorner = origCorner;
 
         if (GetSystemMetrics(SM_REMOTESESSION) != 0) {
+            Pinned[idx] = e;
             PulseDisplayExecutionLock();
             return;
         }
 
         uint dpi = 96;
-        try { dpi = GetDpiForWindow(hwnd); } catch { }
+        try {
+            dpi = GetDpiForWindow(hwnd);
+            if (dpi == 0) dpi = 96;
+        } catch { dpi = 96; }
 
-        bool isGameOrProtected = IsGameOrProtectedClass(hwnd);
+        bool isGame = false;
+        try { isGame = IsGameOrProtectedClass(hwnd); } catch { isGame = false; }
 
-        if (dpi < 168 && !isGameOrProtected) {
+        bool isFs = false;
+        bool isZoom = false;
+        try { isZoom = IsZoomed(hwnd); } catch { isZoom = false; }
+        try { isFs = IsFullscreenWindow(hwnd); } catch { isFs = false; }
+
+        bool skipMpo = isGame || isFs || isZoom;
+
+        if (!skipMpo && dpi < DPI_CORNER_MAX) {
             int pref = DWMWCP_ROUNDSMALL;
-            int hr = DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, sizeof(int));
-            if (hr == 0) {
-                CornerApplied[idx] = true;
-            }
-        }
-
-        if (!CornerApplied[idx] && _hHostWnd != IntPtr.Zero) {
             try {
-                IntPtr hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-                MONITORINFO mi = new MONITORINFO();
-                mi.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
-                if (GetMonitorInfo(hMon, ref mi)) {
-                    SetWindowPos(_hHostWnd, IntPtr.Zero, mi.rcMonitor.left, mi.rcMonitor.top, 1, 1, SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSENDCHANGING);
+                if (DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, CBINT) == 0) {
+                    e.CornerApplied = true;
                 }
-
-                IntPtr thumbId;
-                int hrThumb = DwmRegisterThumbnail(_hHostWnd, hwnd, out thumbId);
-                if (hrThumb == 0 && thumbId != IntPtr.Zero) {
-                    DWM_THUMBNAIL_PROPERTIES props = new DWM_THUMBNAIL_PROPERTIES();
-                    props.dwFlags = DWM_TNP_VISIBLE | DWM_TNP_OPACITY;
-                    props.fVisible = false;
-                    props.opacity = 0;
-                    DwmUpdateThumbnailProperties(thumbId, ref props);
-                    Thumbnails[idx] = thumbId;
-                    ThumbnailApplied[idx] = true;
-                }
-            } catch { }
+            } catch { e.CornerApplied = false; }
         }
 
-        if (!CornerApplied[idx] && !ThumbnailApplied[idx] && !isGameOrProtected) {
+        if (!e.CornerApplied && !skipMpo) {
             if ((origEx & WS_EX_LAYERED) == 0) {
-                IntPtr res = SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(origEx | WS_EX_LAYERED));
-                if (res != IntPtr.Zero || Marshal.GetLastWin32Error() == 0) {
-                    LayeredApplied[idx] = true;
-                    SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, SWP_STEADY_FLAGS | SWP_FRAMECHANGED | SWP_NOZORDER);
-                }
+                try {
+                    IntPtr res = SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(origEx | WS_EX_LAYERED));
+                    if (res != IntPtr.Zero || Marshal.GetLastWin32Error() == 0) {
+                        e.LayeredApplied = true;
+                        SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, SWP_STEADY_FLAGS | SWP_FRAMECHANGED | SWP_NOZORDER);
+                    }
+                } catch { e.LayeredApplied = false; }
             }
         }
 
-        RECT rc = new RECT();
-        if (GetWindowRect(hwnd, out rc)) {
-            int w = rc.right - rc.left;
-            int h = rc.bottom - rc.top;
-            if (!IsTextInputClass(hwnd) && (w <= 1280 && h <= 720)) {
-                long cur = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
-                if ((cur & WS_EX_NOACTIVATE) == 0) {
-                    SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(cur | WS_EX_NOACTIVATE));
-                    SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, SWP_STEADY_FLAGS | SWP_FRAMECHANGED | SWP_NOZORDER);
-                    NoActivateApplied[idx] = true;
+        try {
+            RECT rc;
+            if (!skipMpo && GetWindowRect(hwnd, out rc)) {
+                int w = rc.right - rc.left;
+                int h = rc.bottom - rc.top;
+                int maxW = (int)(((long)SMALL_W * (long)dpi) / 96L);
+                int maxH = (int)(((long)SMALL_H * (long)dpi) / 96L);
+                bool small = (w <= maxW && h <= maxH);
+                bool textInput = IsTextInputClass(hwnd);
+                if (small && !textInput) {
+                    long cur = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
+                    if ((cur & WS_EX_NOACTIVATE) == 0) {
+                        try {
+                            SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(cur | WS_EX_NOACTIVATE));
+                            SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, SWP_STEADY_FLAGS | SWP_FRAMECHANGED | SWP_NOZORDER);
+                            e.NoActivateApplied = true;
+                        } catch { e.NoActivateApplied = false; }
+                    }
                 }
             }
-        }
+        } catch { }
 
+        Pinned[idx] = e;
         PulseDisplayExecutionLock();
     }
 
     private static void RestoreMpoDefense(int idx) {
-        IntPtr hwnd = Pinned[idx];
+        if (idx < 0 || idx >= MAX_PINNED) return;
+        PinnedEntry e = Pinned[idx];
+        IntPtr hwnd = e.Hwnd;
+        if (hwnd == IntPtr.Zero || !IsWindow(hwnd)) {
+            e.CornerApplied = false;
+            e.LayeredApplied = false;
+            e.NoActivateApplied = false;
+            Pinned[idx] = e;
+            return;
+        }
 
-        if (NoActivateApplied[idx]) {
+        if (e.NoActivateApplied) {
             try {
                 long cur = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
                 SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(cur & ~WS_EX_NOACTIVATE));
                 SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, SWP_STEADY_FLAGS | SWP_FRAMECHANGED | SWP_NOZORDER);
             } catch { }
-            NoActivateApplied[idx] = false;
+            e.NoActivateApplied = false;
         }
 
-        if (ThumbnailApplied[idx] && Thumbnails[idx] != IntPtr.Zero) {
+        if (e.CornerApplied) {
             try {
-                DwmUnregisterThumbnail(Thumbnails[idx]);
+                int corner = e.OrigCorner;
+                DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref corner, CBINT);
             } catch { }
-            Thumbnails[idx] = IntPtr.Zero;
-            ThumbnailApplied[idx] = false;
+            e.CornerApplied = false;
         }
 
-        if (CornerApplied[idx]) {
+        if (e.LayeredApplied) {
             try {
-                int corner = OrigCorners[idx];
-                DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref corner, sizeof(int));
-            } catch { }
-            CornerApplied[idx] = false;
-        }
-
-        if (LayeredApplied[idx]) {
-            try {
-                long currentEx = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
-                SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(currentEx & ~WS_EX_LAYERED));
+                long cur = GetWindowLongPtr(hwnd, GWL_EXSTYLE).ToInt64();
+                SetWindowLongPtr(hwnd, GWL_EXSTYLE, new IntPtr(cur & ~WS_EX_LAYERED));
                 SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, SWP_STEADY_FLAGS | SWP_FRAMECHANGED | SWP_NOZORDER);
             } catch { }
-            LayeredApplied[idx] = false;
+            e.LayeredApplied = false;
         }
+
+        Pinned[idx] = e;
     }
 
     private static void ReArmAll() {
+        if (PinnedCount == 0) return;
         for (int i = 0; i < PinnedCount; i++) {
-            IntPtr hwnd = Pinned[i];
-            if (!IsWindow(hwnd)) continue;
+            IntPtr hwnd = Pinned[i].Hwnd;
+            if (hwnd == IntPtr.Zero || !IsWindow(hwnd)) continue;
 
-            if (CornerApplied[i]) {
+            if (Pinned[i].CornerApplied) {
                 int pref = DWMWCP_ROUNDSMALL;
-                try { DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, sizeof(int)); } catch { }
-            }
-
-            if (ThumbnailApplied[i] && _hHostWnd != IntPtr.Zero) {
-                try {
-                    if (Thumbnails[i] != IntPtr.Zero) {
-                        DwmUnregisterThumbnail(Thumbnails[i]);
-                    }
-                    IntPtr thumbId;
-                    if (DwmRegisterThumbnail(_hHostWnd, hwnd, out thumbId) == 0) {
-                        DWM_THUMBNAIL_PROPERTIES props = new DWM_THUMBNAIL_PROPERTIES();
-                        props.dwFlags = DWM_TNP_VISIBLE | DWM_TNP_OPACITY;
-                        props.fVisible = false;
-                        props.opacity = 0;
-                        DwmUpdateThumbnailProperties(thumbId, ref props);
-                        Thumbnails[i] = thumbId;
-                    }
-                } catch { }
+                try { DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, CBINT); } catch { }
             }
         }
         PulseDisplayExecutionLock();
     }
 
     private static void PulseDisplayExecutionLock() {
-        Interlocked.Increment(ref _pulseRef);
-        SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED);
-        ThreadPool.QueueUserWorkItem(delegate {
-            try {
-                Thread.Sleep(2000);
-            } catch { }
-            finally {
-                if (Interlocked.Decrement(ref _pulseRef) == 0) {
-                    SetThreadExecutionState(ES_CONTINUOUS);
-                }
+        try {
+            _pulseUntil = GetTickCount64() + PULSE_MS;
+            _pulseActive = true;
+            SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED);
+        } catch { }
+    }
+
+    private static void MaintainDisplayPulse() {
+        if (!_pulseActive) return;
+        try {
+            if (GetTickCount64() >= _pulseUntil) {
+                SetThreadExecutionState(ES_CONTINUOUS);
+                _pulseActive = false;
+                _pulseUntil = 0;
             }
-        });
+        } catch { }
+    }
+
+    private static void ResetDisplayPulse() {
+        if (!_pulseActive) { _pulseUntil = 0; return; }
+        try { SetThreadExecutionState(ES_CONTINUOUS); } catch { }
+        _pulseActive = false;
+        _pulseUntil = 0;
     }
 
     private static void Enforce() {
         if (PinnedCount == 0) return;
 
         for (int i = PinnedCount - 1; i >= 0; i--) {
-            if (!IsWindow(Pinned[i])) {
+            IntPtr hw = Pinned[i].Hwnd;
+            if (hw == IntPtr.Zero || !IsWindow(hw)) {
                 UnpinIndex(i);
             }
         }
 
         if (PinnedCount == 0) return;
 
-        IntPtr fg = GetForegroundWindow();
-        if (fg == IntPtr.Zero) return;
-
-        IntPtr fgRoot = GetTrueRoot(fg);
-        if (fgRoot == IntPtr.Zero) fgRoot = fg;
-
-        bool fgChanged = (fgRoot != _lastForeground);
-        _lastForeground = fgRoot;
-
         for (int i = 0; i < PinnedCount; i++) {
-            IntPtr p = Pinned[i];
+            IntPtr p = Pinned[i].Hwnd;
+            if (p == IntPtr.Zero || !IsWindow(p)) continue;
+
             if (IsIconic(p)) {
-                if (!WasIconic[i]) {
-                    WasIconic[i] = true;
-                    if (CornerApplied[i]) {
-                        int defCorner = DWMWCP_DEFAULT;
-                        try { DwmSetWindowAttribute(p, DWMWA_WINDOW_CORNER_PREFERENCE, ref defCorner, sizeof(int)); } catch { }
+                if (!Pinned[i].WasIconic) {
+                    PinnedEntry e = Pinned[i];
+                    e.WasIconic = true;
+                    Pinned[i] = e;
+                    if (p != IntPtr.Zero && IsWindow(p)) {
+                        if (e.CornerApplied) {
+                            int orig = e.OrigCorner;
+                            try { DwmSetWindowAttribute(p, DWMWA_WINDOW_CORNER_PREFERENCE, ref orig, CBINT); } catch { }
+                        }
+                        long curEx = GetWindowLongPtr(p, GWL_EXSTYLE).ToInt64();
+                        long nextEx = (curEx | WS_EX_LAYERED | WS_EX_APPWINDOW) & ~WS_EX_NOACTIVATE;
+                        if (nextEx != curEx) {
+                            try { SetWindowLongPtr(p, GWL_EXSTYLE, new IntPtr(nextEx)); } catch { }
+                        }
+                        try { SetLayeredWindowAttributes(p, 0, 0, LWA_ALPHA); } catch { }
+                        SetWindowPos(p, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_STEADY_FLAGS | SWP_FRAMECHANGED);
                     }
-                    long curEx = GetWindowLongPtr(p, GWL_EXSTYLE).ToInt64();
-                    if ((curEx & WS_EX_LAYERED) == 0) {
-                        SetWindowLongPtr(p, GWL_EXSTYLE, new IntPtr(curEx | WS_EX_LAYERED));
-                    }
-                    SetLayeredWindowAttributes(p, 0, 0, LWA_ALPHA);
-                    SetWindowPos(p, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOSENDCHANGING);
                 }
                 continue;
             }
 
-            if (WasIconic[i]) {
-                WasIconic[i] = false;
-                if (!LayeredApplied[i] && (OrigExStyles[i] & WS_EX_LAYERED) == 0) {
+            if (Pinned[i].WasIconic) {
+                PinnedEntry e = Pinned[i];
+                e.WasIconic = false;
+                Pinned[i] = e;
+                if (p != IntPtr.Zero && IsWindow(p)) {
                     long curEx = GetWindowLongPtr(p, GWL_EXSTYLE).ToInt64();
-                    SetWindowLongPtr(p, GWL_EXSTYLE, new IntPtr(curEx & ~WS_EX_LAYERED));
-                } else {
-                    SetLayeredWindowAttributes(p, 0, 255, LWA_ALPHA);
+                    long nextEx = curEx;
+                    if (!e.LayeredApplied && (e.OrigExStyle & WS_EX_LAYERED) == 0) {
+                        nextEx &= ~WS_EX_LAYERED;
+                    }
+                    if ((e.OrigExStyle & WS_EX_APPWINDOW) == 0) {
+                        nextEx &= ~WS_EX_APPWINDOW;
+                    }
+                    if (e.NoActivateApplied) {
+                        nextEx |= WS_EX_NOACTIVATE;
+                    }
+                    if (nextEx != curEx) {
+                        try { SetWindowLongPtr(p, GWL_EXSTYLE, new IntPtr(nextEx)); } catch { }
+                    }
+                    if ((nextEx & WS_EX_LAYERED) != 0) {
+                        try {
+                            SetLayeredWindowAttributes(p, 0, e.OrigAlpha, (e.OrigLwaFlags != 0) ? e.OrigLwaFlags : LWA_ALPHA);
+                        } catch { }
+                    }
+                    if (e.CornerApplied) {
+                        int pref = DWMWCP_ROUNDSMALL;
+                        try { DwmSetWindowAttribute(p, DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, CBINT); } catch { }
+                    }
+                    SetWindowPos(p, HWND_TOPMOST, 0, 0, 0, 0, SWP_STEADY_FLAGS | SWP_FRAMECHANGED);
                 }
-                if (CornerApplied[i]) {
-                    int pref = DWMWCP_ROUNDSMALL;
-                    try { DwmSetWindowAttribute(p, DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, sizeof(int)); } catch { }
-                }
-                SetWindowPos(p, HWND_TOPMOST, 0, 0, 0, 0, SWP_STEADY_FLAGS);
             }
 
             if (!IsWindowVisible(p)) continue;
 
-            if (fgChanged || GetWindow(p, GW_HWNDPREV) != IntPtr.Zero) {
+            if (GetWindow(p, GW_HWNDPREV) != IntPtr.Zero) {
                 SetWindowPos(p, HWND_TOPMOST, 0, 0, 0, 0, SWP_STEADY_FLAGS);
             }
         }
 
-        for (int i = 0; i < PinnedCount; i++) {
-            IntPtr p = Pinned[i];
-            if (!IsWindow(p) || IsIconic(p) || !IsWindowVisible(p)) continue;
-
-            // VECTOR 45: Dynamic Morph-Back Watcher (mpv / video maximize & restore focus recovery)
-            RECT rc;
-            if (GetWindowRect(p, out rc)) {
-                int w = rc.right - rc.left;
-                int h = rc.bottom - rc.top;
-                bool isLargeOrZoomed = (w > 1280 || h > 720 || IsZoomed(p) || IsTextInputClass(p));
-
-                if (NoActivateApplied[i] && isLargeOrZoomed) {
-                    long cur = GetWindowLongPtr(p, GWL_EXSTYLE).ToInt64();
-                    SetWindowLongPtr(p, GWL_EXSTYLE, new IntPtr(cur & ~WS_EX_NOACTIVATE));
-                    SetWindowPos(p, IntPtr.Zero, 0, 0, 0, 0, SWP_STEADY_FLAGS | SWP_FRAMECHANGED | SWP_NOZORDER);
-                    NoActivateApplied[i] = false;
-                } else if (!NoActivateApplied[i] && !isLargeOrZoomed && (OrigExStyles[i] & WS_EX_NOACTIVATE) == 0) {
-                    long cur = GetWindowLongPtr(p, GWL_EXSTYLE).ToInt64();
-                    SetWindowLongPtr(p, GWL_EXSTYLE, new IntPtr(cur | WS_EX_NOACTIVATE));
-                    SetWindowPos(p, IntPtr.Zero, 0, 0, 0, 0, SWP_STEADY_FLAGS | SWP_FRAMECHANGED | SWP_NOZORDER);
-                    NoActivateApplied[i] = true;
-                }
-            }
-
-            if (NoActivateApplied[i]) {
-                SuppressTaskbarIfFullscreen(p);
-            }
-        }
-
-        try { DwmFlush(); } catch { }
+        MaintainDisplayPulse();
     }
 
     private static void OnForegroundChanged(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime) {
         if (idObject != 0) return;
-        Enforce();
+        if (PinnedCount == 0) return;
+        if (eventType == EVENT_SYSTEM_FOREGROUND) {
+            Enforce();
+            return;
+        }
+        if (hwnd != IntPtr.Zero) {
+            IntPtr root = GetTrueRoot(hwnd);
+            for (int i = 0; i < PinnedCount; i++) {
+                if (Pinned[i].Hwnd == root || Pinned[i].Hwnd == hwnd) {
+                    Enforce();
+                    return;
+                }
+            }
+        }
     }
 
     private static void OnHeartbeat(IntPtr hWnd, uint uMsg, UIntPtr nIDEvent, uint dwTime) {
+        if (PinnedCount == 0) return;
         Enforce();
+    }
+
+    private static bool IsTransientPopup(IntPtr hwnd) {
+        if (hwnd == IntPtr.Zero) return true;
+        StringBuilder sb = new StringBuilder(CLASS_BUF);
+        try {
+            if (GetClassName(hwnd, sb, sb.Capacity) > 0) {
+                string cls = sb.ToString();
+                if (cls == "tooltips_class32" || cls == "#32768") {
+                    return true;
+                }
+                if (cls == "MSCTFIME UI" || cls == "IME") {
+                    return true;
+                }
+            }
+        } catch { }
+        return false;
     }
 
     private static bool IsSystemShellWindow(IntPtr hwnd) {
         if (hwnd == IntPtr.Zero) return true;
-        StringBuilder sb = new StringBuilder(64);
+        StringBuilder sb = new StringBuilder(CLASS_BUF);
         if (GetClassName(hwnd, sb, sb.Capacity) > 0) {
             string cls = sb.ToString();
             if (cls == "Shell_TrayWnd" || cls == "Shell_SecondaryTrayWnd" ||
@@ -993,10 +1045,11 @@ internal static class Program {
     }
 
     private static bool IsGameOrProtectedClass(IntPtr hwnd) {
-        StringBuilder sb = new StringBuilder(64);
+        StringBuilder sb = new StringBuilder(CLASS_BUF);
         if (GetClassName(hwnd, sb, sb.Capacity) > 0) {
             string cls = sb.ToString();
-            if (cls.Contains("Valve001") || cls.Contains("UnrealWindow") || cls.Contains("UnityWndClass")) {
+            if (cls.Contains("Valve001") || cls.Contains("UnrealWindow") || cls.Contains("UnityWndClass") ||
+                cls.Contains("GLFW") || cls.Contains("SDL_app")) {
                 return true;
             }
         }
@@ -1004,7 +1057,7 @@ internal static class Program {
     }
 
     private static bool IsTextInputClass(IntPtr hwnd) {
-        StringBuilder sb = new StringBuilder(64);
+        StringBuilder sb = new StringBuilder(CLASS_BUF);
         if (GetClassName(hwnd, sb, sb.Capacity) > 0) {
             string cls = sb.ToString();
             if (cls == "Notepad" || cls == "Edit" || cls.Contains("Console") || cls.Contains("Terminal")) {
@@ -1016,14 +1069,44 @@ internal static class Program {
         uint tid = GetWindowThreadProcessId(hwnd, out pid);
         if (tid != 0) {
             GUITHREADINFO gui = new GUITHREADINFO();
-            gui.cbSize = Marshal.SizeOf(typeof(GUITHREADINFO));
-            if (GetGUIThreadInfo(tid, ref gui)) {
-                if (gui.hwndCaret != IntPtr.Zero) {
-                    return true;
+            gui.cbSize = SizeOfGuiInfo;
+            try {
+                if (GetGUIThreadInfo(tid, ref gui)) {
+                    if (gui.hwndCaret != IntPtr.Zero) {
+                        return true;
+                    }
                 }
-            }
+            } catch { }
         }
 
         return false;
     }
+
+    private static bool IsCloaked(IntPtr hwnd) {
+        try {
+            int cloaked;
+            if (DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, out cloaked, CBINT) == 0) {
+                return cloaked != 0;
+            }
+        } catch { }
+        return false;
+    }
+
+    private static bool IsFullscreenWindow(IntPtr hwnd) {
+        try {
+            IntPtr hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            if (hMon == IntPtr.Zero) return false;
+            MONITORINFO mi = new MONITORINFO();
+            mi.cbSize = SizeOfMonitorInfo;
+            if (!GetMonitorInfo(hMon, ref mi)) return false;
+            RECT rc;
+            if (!GetWindowRect(hwnd, out rc)) return false;
+            if (rc.left <= mi.rcMonitor.left && rc.top <= mi.rcMonitor.top &&
+                rc.right >= mi.rcMonitor.right && rc.bottom >= mi.rcMonitor.bottom) {
+                return true;
+            }
+        } catch { }
+        return false;
+    }
 }
+
