@@ -1,70 +1,50 @@
 ====================================================================
-  native-topmost - Ultra-lean Win32 Topmost Enforcer
+  native-topmost - Lightweight Windows Always-on-Top
 ====================================================================
 
-Fixes Microsoft PowerToys Always-on-Top (Win + Ctrl + T) which fails
-whenever applications enter fullscreen mode.
+Keeps windows pinned on top, even over full-screen games, video players,
+and multi-monitor setups.
 
-Living-off-the-land (LOTL) implementation. No AutoHotkey, no background
-runtimes, no third-party circus.
-
-Resource Footprint: 18 KB binary | ~2.5 MB RAM | Zero dependencies
+Footprint: 27 KB standalone executable | ~2 MB RAM | Zero dependencies
 
 --------------------------------------------------------------------
-  PREREQUISITE (IMPORTANT)
+  PREREQUISITE
 --------------------------------------------------------------------
-If Microsoft PowerToys is installed on your computer:
-Open PowerToys Settings -> "Always on Top" -> Toggle it OFF.
-Ensure PowerToys native "Always on Top" is toggled OFF in PowerToys
-Settings to avoid hotkey collision.
+If Microsoft PowerToys is installed:
+Open PowerToys Settings -> "Always on Top" -> Turn it OFF
+(prevents hotkey conflicts).
 
 --------------------------------------------------------------------
-  HOW TO INSTALL (One-Click)
+  HOW TO INSTALL
 --------------------------------------------------------------------
 1. Double-click install.bat.
-   - Where does it go? It automatically deploys TopmostDaemon.exe into:
-     %LOCALAPPDATA%\TopmostDaemon\
-     Even if you empty your Downloads folder later, it will not break.
-   - Safe Execution: Uses scoped execution bypass for that command only.
-     Zero weakening of your system-wide PowerShell ExecutionPolicy.
-     No registry tampering.
-   - Automatically registers a silent startup task on Windows logon.
-   - Pure Windows GUI execution (winexe, zero terminal flash).
-   - Standard user privileges are sufficient for normal applications.
+   - Installs TopmostDaemon.exe into %LOCALAPPDATA%\TopmostDaemon\
+   - Automatically registers a background startup task on Windows logon.
    - Optional: Right-click install.bat and select "Run as Administrator"
-     to enable UIPI immunity for elevated windows such as Task Manager.
+     if you need to pin elevated windows like Task Manager.
 
 --------------------------------------------------------------------
   HOW TO USE
 --------------------------------------------------------------------
-- Press [ Win + Ctrl + T ] on any window to pin or unpin.
+- Hotkey: Press [ Ctrl + Win + T ] to pin or unpin.
 - Targeting:
-  * Standard windows: Press hotkey while the window is active.
-  * Picture-in-Picture (PiP) and media: Hover mouse cursor over the
-    window and press hotkey.
-- Audio Telemetry:
-  * High beep = Window pinned on top.
-  * Low beep  = Window unpinned.
-  * Stop beep = Ignored (system shell window or limit of 16 reached).
-
-- Fullscreen and PiP Behaviour:
-  * Pinned windows remain visible over fullscreen games, web browsers (F11),
-    and video players.
-  * Clicks inside pinned Picture-in-Picture windows do not steal keyboard
-    focus, ensuring the Windows Taskbar does not surface over fullscreen apps.
-  * Unpinning cleanly demotes the window behind fullscreen applications.
+  * Standard windows: Focus or click the window, then press hotkey.
+  * Picture-in-Picture: Hover mouse over the player and press hotkey.
+  * Hover unpin: Hover mouse over any pinned window and press hotkey.
+- Sound feedback:
+  * Asterisk chime (MB_ICONASTERISK) = Window pinned.
+  * Default beep (MB_OK)             = Window unpinned.
+  * Stop chime (MB_ICONHAND)         = Ignored (shell or Admin window).
 
 --------------------------------------------------------------------
   HOW TO UNINSTALL
 --------------------------------------------------------------------
 1. Double-click uninstall.bat.
-   - This stops the process, unregisters the Task Scheduler entry,
-     and wipes %LOCALAPPDATA%\TopmostDaemon cleanly from disk.
+   - Stops the process, removes the startup task, and deletes the files.
 
 --------------------------------------------------------------------
-  SOURCE AND LICENSE
+  SOURCE & LICENSE
 --------------------------------------------------------------------
 GitHub: https://github.com/pagar-ani/native-topmost
 Dual-licensed under GNU AGPL-3.0 and Commercial License.
-Commercial use requires explicit written permission.
 ====================================================================

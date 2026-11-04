@@ -4,7 +4,7 @@ echo [*] Compiling native-topmost using built-in Windows csc.exe...
 
 rem Graceful close first so running instance restores windows, fallback to force
 taskkill /im TopmostDaemon.exe >nul 2>&1
-timeout /t 1 /nobreak >nul 2>&1
+ping 127.0.0.1 -n 2 >nul 2>&1
 taskkill /f /im TopmostDaemon.exe >nul 2>&1
 
 set "CSC="
